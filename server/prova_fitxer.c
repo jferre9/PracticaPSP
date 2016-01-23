@@ -18,6 +18,7 @@ void posicio() {
 	FILE *f = fopen("soft.bin","rb");
 	if (f == NULL) {
         //codi error
+        return;
 	}
 
 	fseek(f,0,SEEK_END);
@@ -27,8 +28,7 @@ void posicio() {
 
 	if (pos > mida) return; //codi error
 
-	if (pos + offset > mida) mida_real = mida-pos +1;
-	else mida_real = offset+1;
+
 
 
 	fseek(f,pos,SEEK_SET);
@@ -43,6 +43,77 @@ void posicio() {
 }
 
 void paraula() {
+    int offset;
+	int mida, pos;
+	int mida_real;
+	char paraula[8];
+	printf("Paraula: ");
+	scanf("%s",paraula);
+	printf("num caracters: ");
+	scanf("%d",&offset);
+	char anterior[offset+1];
+	char posterior[offset+1];
+	char buffer[64];
+
+
+	FILE *f = fopen("soft.bin","rb");
+	if (f == NULL) {
+        //codi error
+        return;
+	}
+	int num;
+	char *prova = NULL;
+	do {
+        num = fread(buffer,sizeof(char),64,f);
+        prova = strstr(buffer,paraula);
+        if (prova != NULL) {
+            printf("%d\n",ftell(f));
+            pos = ftell(f) - 64 + (prova - buffer);
+            printf("pos = %d\n",pos);
+            break;
+        }
+        fseek(f,ftell(f)-8,SEEK_SET);//Moc el punter 8 caracters enrere perque no pugui quedar la paraula tallada
+
+	} while (num == 64);
+
+	if (prova == NULL) {
+        //codi error
+        printf("No s'ha trobat la paraula\n");
+        return;
+	}
+	if ((pos - offset) < 0) {
+        fseek(f,0,SEEK_SET);
+        num = fread(anterior,sizeof(char),pos,f);
+	} else {
+        printf("estic al else\n");
+        fseek(f,pos-offset,SEEK_SET);
+        num = fread(anterior,sizeof(char),offset,f);
+    }
+    anterior[num] = '\0';
+
+	printf("num = %d, anterior = %s\n",num,anterior);
+
+	fseek(f,ftell(f)+strlen(paraula),SEEK_SET);
+	num  = fread(posterior,sizeof(char),offset,f);
+	posterior[num] = '\0';
+	printf("Posterior = %s\n",posterior);
+
+//    fseek(f,0,SEEK_SET);
+//    printf("abans fread\n");
+//	int num = fread(buffer,sizeof(char),64,f);
+//    printf("num = %d\n",num);
+//	prova = strstr(buffer,"CONTRASENYA");
+//	printf("Buffer = %s\n",buffer);
+//	printf("Prova = %s\n",prova);
+//	printf("buffer - prova = %d\n",buffer-prova);
+//	printf("prova - buffer = %d\n",prova - buffer);
+//	fseek(f,prova - buffer,SEEK_SET);
+//	num = fread(buffer,sizeof(char),64,f);
+//	printf("Buffer = %s\n",buffer);
+
+
+
+
 
 
 
