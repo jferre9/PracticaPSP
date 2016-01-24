@@ -9,10 +9,24 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
 
 #define PORT 1600
 
 #define MAX_CL	1
+
+/*
+Ordres possibles:
+
+UP
+START
+STOP
+READ
+SEARCH
+DELETE
+
+*/
+
 
 
 //Codis retorn servidor
@@ -35,6 +49,13 @@ typedef struct {
 	t_client client[MAX_CL];
 	int num;
 } t_clients;
+
+typedef struct {
+    char file[32];
+    char paraula[16];
+    int pos;
+    int offset;
+} t_fitxer;
 
 
 
@@ -62,18 +83,11 @@ void pujar_executable(int fdClient) {
 
     //Comprovem que no existeixi el fitxer
 	if( access( exe.name, F_OK ) != -1 ) {
-		err = ERROR;
-		if((m=write(fdClient, &err, sizeof(int)))<0){
-			perror("Write client");
-		}
+		enviar_codi(fdClient,ERROR);
 		printf("Existeix un fitxer amb el mateix nom\n");
 		return;
 	}
-	err = OK;
-	if((m=write(fdClient, &err, sizeof(int)))<0){
-		perror("Write client");
-		return;
-	}
+	enviar_codi(fdClient,OK);
 
 	FILE *f = fopen(exe.name, "wb");
     if(f==NULL){
@@ -99,11 +113,9 @@ void pujar_executable(int fdClient) {
 		}
 		printf("Error al transferir\n");
 	} else {
-		err = OK;
-		if((m=write(fdClient, &err, sizeof(int)))<0){
-			perror("Write client");
-		}
+		enviar_codi(fdClient,OK);
 		printf("S'ha transferit correctament\n");
+		if (chmod(exe.name,S_IRWXU | S_IRWXG | S_IRWXO) < 0) perror("chmod");
 	}
 
 	fclose(f);
@@ -172,11 +184,7 @@ void iniciar_executable(int fdClient) {
 	}
 	else if (pid == 0) {
 		//implamentar exec
-		char ruta[64];
-		strcpy(ruta,"./");
-		strcat(ruta,file);
-		printf("Ruta: %s File %s\n",ruta,file);
-		execl(ruta,file,NULL);
+		execl(file,file,NULL);
 		perror("exec");
 		_exit(-1);
 	}
@@ -216,27 +224,138 @@ void matar_programa (int fdClient) {
 	enviar_codi(fdClient,err);
 }
 
+
+/* Codis error possibles:
+ * -1: No existeix el fitxer
+ * -2: La posicio esta fora el fitxer
+ */
+void llegir_posicio(int fdClient) {
+    t_fitxer fitxer;
+    int num, m;
+
+    if((m=read(fdClient,&fitxer,sizeof(t_fitxer)))<0){
+        perror("read");
+    }
+    FILE *f = fopen(fitxer.file,"rb");
+	if (f == NULL) {
+        enviar_codi(fdClient,ERROR);
+        return;
+	}
+	char buffer[fitxer.offset+1];
+
+	fseek(f,fitxer.pos,SEEK_SET);
+	num = fread(buffer,sizeof(char),fitxer.offset,f);
+	if (num <= 0) {
+        enviar_codi(fdClient,-2);
+        fclose(f);
+        return;
+	}
+	buffer[num] = '\0';
+	printf("He llegit %d: %s\n",num,buffer);
+	enviar_codi(fdClient,OK);
+	if((m=write(fdClient, buffer, fitxer.offset+1))<0) {
+        perror("Write client");
+    }
+    fclose(f);
+
+}
+
+
+/* Codis error possibles:
+ * -1: No existeix el fitxer
+ * -2: No s'ha trobat la paraula
+ */
+void busca_paraula(int fdClient) {
+    t_fitxer fitxer;
+    int m, num;
+    if((m=read(fdClient,&fitxer,sizeof(t_fitxer)))<0){
+        perror("read");
+    }
+    FILE *f = fopen(fitxer.file,"rb");
+	if (f == NULL) {
+        enviar_codi(fdClient,ERROR);
+        return;
+	}
+
+	char anterior[fitxer.offset+1];
+	char posterior[fitxer.offset+1];
+	char buffer[64];
+	char *prova = NULL;
+	int pos;
+
+	do {
+        num = fread(buffer,sizeof(char),64,f);
+        printf("%s\n",buffer);
+        prova = strstr(buffer,fitxer.paraula);
+        if (prova != NULL) {
+            pos = ftell(f) - 64 + (prova - buffer);
+            break;
+        }
+        fseek(f,ftell(f)-16,SEEK_SET);//Moc el punter 16 caracters enrere perque no pugui quedar la paraula tallada
+
+	} while (num == 64);
+
+	if (prova == NULL) {
+        enviar_codi(fdClient,-2);
+        printf("No s'ha trobat la paraula\n");
+        fclose(f);
+        return;
+	}
+	if ((pos - fitxer.offset) < 0) {
+        fseek(f,0,SEEK_SET);
+        num = fread(anterior,sizeof(char),pos,f);
+	} else {
+        fseek(f,pos-fitxer.offset,SEEK_SET);
+        num = fread(anterior,sizeof(char),fitxer.offset,f);
+    }
+    anterior[num] = '\0';
+
+	fseek(f,ftell(f)+strlen(fitxer.paraula),SEEK_SET);
+	num  = fread(posterior,sizeof(char),fitxer.offset,f);
+	posterior[num] = '\0';
+	printf("Anterior = %s\nPosterior = %s\n",anterior,posterior);
+	enviar_codi(fdClient,OK);
+	if((m=write(fdClient, anterior, fitxer.offset+1))<0) {
+        perror("Write client");
+    }
+    if((m=write(fdClient, posterior, fitxer.offset+1))<0) {
+        perror("Write client");
+    }
+    fclose(f);
+}
+
 void *atendre_client(void *x) {
 	t_client *client = (t_client *)x;
 	//printf("fd = %d\n",fdClient);
 	char ordre[8];
 	int m;
 
+    while (1) {
 	//llegim la ordre
 	if((m=read(client->sock,ordre,sizeof(ordre)))<0){
         perror("read");
     }
+    if (!m) {
+        printf("El client ha tancat el programa\n");
+        break;
+    }
+    printf("m = %d\n\n\n",m);
 
     //Cridem les diferents funcions depenent de la ordre
 
     if (!strcmp(ordre,"UP")) pujar_executable(client->sock);
     else if (!strcmp(ordre,"START")) iniciar_executable(client->sock);
     else if (!strcmp(ordre,"STOP")) matar_programa(client->sock);
+    else if (!strcmp(ordre,"READ")) llegir_posicio(client->sock);
+    else if (!strcmp(ordre,"SEARCH")) busca_paraula(client->sock);
+    //else if (!strcmp(ordre,"DELETE")) matar_programa(client->sock);
 
-
+    }
 	pthread_mutex_lock(&mut);
 	client->ocupat = 0;
 	pthread_mutex_unlock(&mut);
+
+
 
 }
 

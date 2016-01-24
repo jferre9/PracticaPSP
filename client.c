@@ -49,36 +49,52 @@ int rebre_codi(int fd) {
 	return resposta;
 }
 
+typedef struct {
+    char file[32];
+    char paraula[16];
+    int pos;
+    int offset;
+} t_fitxer;
+
 //client envia mida i nom servidor torna error si existeix i ok si no existeix
-void pujar_executable(int fd, char* file){
+void pujar_executable(int fd){
 	t_executable exe;
 	int m, n, resposta;
     char buf[1024];
-	
+    FILE *f = NULL;
+    do {
+        printf("Fitxer a pujar: ");
+        scanf("%s", exe.name);
+        f = fopen(exe.name,"rb");
+        if (f == NULL) printf("El fitxer no existeix\n");
+    } while (f == NULL);
+
+
+
 	//Enviem la operacio al servidor:
 	char ordre[8] = "UP";
 	if((m=write(fd, ordre, sizeof(ordre)))<0){
         perror("Write client");
         return;
     }
-    
-	FILE *f = fopen(file,"rb");
+
+
     if(f==NULL){
         printf("El fitxer no existeix");
         return;
     }
-    
-    strcpy(exe.name, file);
+
+
     fseek(f, 0L, SEEK_END);
     exe.size = ftell(f);
-    
-    
-    
+
+
+
 	if((m=write(fd, &exe, sizeof(t_executable)))<0){
         perror("Write client");
         return;
     }
-    
+
     //Resposta del servidor
     if((m=read(fd,&resposta,sizeof(int)))<0){
         perror("read");
@@ -88,9 +104,9 @@ void pujar_executable(int fd, char* file){
 		return;
 	}
     resposta = ERROR;
-    
+
     fseek(f, 0L, SEEK_SET);
-    
+
     int x;
 	int i;
 	x=fread(buf,sizeof(char),1024,f);
@@ -112,10 +128,10 @@ void pujar_executable(int fd, char* file){
 	} else {
 		printf("El fitxer s'ha transferit correctament\n");
 	}
-	
+
 	fclose(f);
-	
-	
+
+
 }
 
 
@@ -154,7 +170,7 @@ void iniciar_executable(int fd, char* file){
 			printf("S'ha produït un error no identificat");
 			break;
 	}
-    
+
 }
 
 /* Codis error possibles:
@@ -184,7 +200,89 @@ void matar_programa (int fd) {
 			printf("S'ha produït un error no identificat");
 			break;
 	}
-    
+
+}
+
+
+
+void llegir_posicio(int fd) {
+    t_fitxer fitxer;
+    int m;
+
+    printf("Introdueix el nom del fitxer: ");
+    scanf("%s",fitxer.file);
+    printf("Introdueix la posicio: ");
+    scanf("%d",&fitxer.pos);
+    printf("Introdueix el nombre de caracters a llegir: ");
+    scanf("%d",&fitxer.offset);
+
+    char ordre[8]= "READ";
+    if((m=write(fd, ordre, sizeof(ordre)))<0){
+        perror("Write client");
+        return;
+    }
+    if((m=write(fd, &fitxer, sizeof(t_fitxer)))<0){
+        perror("Write client");
+        return;
+    }
+
+    int resposta = rebre_codi(fd);
+    if (resposta == OK) {
+        char buffer[fitxer.offset+1];
+        if((m=read(fd,buffer,fitxer.offset+1))<0){
+            perror("read");
+        }
+        printf("Caracters llegits = %s\n",buffer);
+
+    } else {
+        if (resposta == -1) printf("No existeix el fitxer\n");
+        else if (resposta == -1) printf("La posicio es troba fora del fitxer\n");
+        else printf("Error desconegut\n");
+    }
+
+
+}
+
+void busca_paraula(int fd) {
+    t_fitxer fitxer;
+    int m;
+
+
+    printf("Introdueix el nom del fitxer: ");
+    scanf("%s",fitxer.file);
+    printf("Introdueix la paraula: ");
+    scanf("%s",fitxer.paraula);
+    printf("Introdueix el nombre de caracters a llegir: ");
+    scanf("%d",&fitxer.offset);
+
+    char ordre[8]= "SEARCH";
+    if((m=write(fd, ordre, sizeof(ordre)))<0){
+        perror("Write client");
+        return;
+    }
+    if((m=write(fd, &fitxer, sizeof(t_fitxer)))<0){
+        perror("Write client");
+        return;
+    }
+
+    int resposta = rebre_codi(fd);
+    if (resposta == OK) {
+        char anterior[fitxer.offset+1];
+        char posterior[fitxer.offset+1];
+        if((m=read(fd,anterior,fitxer.offset+1))<0){
+            perror("read");
+        }
+        if((m=read(fd,posterior,fitxer.offset+1))<0){
+            perror("read");
+        }
+        printf("Caracters anteriors = %s\n",anterior);
+        printf("Caracters posteriors = %s\n",posterior);
+    } else {
+        if (resposta == -1) printf("No existeix el fitxer\n");
+        else if (resposta == -1) printf("No s'ha trobat la paraula\n");
+        else printf("Error desconegut\n");
+    }
+
 }
 
 int main(int argc, char **argv) {
@@ -206,62 +304,70 @@ int main(int argc, char **argv) {
         perror("connect");
         return -1;
     }
-    int opcio;
-    printf("Que vols fer? \n1)Passar executable\n2)Iniciar Executable\n");
-    printf("3)Parar execució\n4)Llegir caracters\n5)Buscar paraula\n");
-    printf("Introdueix la opcio: ");
-    scanf("%d",&opcio);
-    switch(opcio) {
-		printf("op = %d",opcio);
-		case 1:
-            printf("Fitxer a pujar: ");
-            scanf("%s", buff);
-            pujar_executable(fd, buff);
-            break;
-		case 2:
-			printf("Fitxer a executar: ");
-            scanf("%s", buff);
-            iniciar_executable(fd, buff);
-            break;
-		case 3:
-			matar_programa(fd);
-			break;
-        default:
-			printf("Opcio incorrecte\n");
-			break;
-	}
-	
-	
+    int opcio = 0;
+    while (opcio != 6) {
+        printf("Que vols fer? \n1)Passar executable\n2)Iniciar Executable\n");
+        printf("3)Parar execució\n4)Llegir caracters\n5)Buscar paraula\n");
+        printf("6)Tancar programa\n");
+        printf("Introdueix la opcio: ");
+        scanf("%d",&opcio);
+        switch(opcio) {
+            printf("op = %d",opcio);
+            case 1:
+                pujar_executable(fd);
+                break;
+            case 2:
+                printf("Fitxer a executar: ");
+                scanf("%s", buff);
+                iniciar_executable(fd, buff);
+                break;
+            case 3:
+                matar_programa(fd);
+                break;
+            case 4:
+                llegir_posicio(fd);
+                break;
+            case 5:
+                busca_paraula(fd);
+                break;
+            case 6:
+                break;
+            default:
+                printf("Opcio incorrecte\n");
+                break;
+        }
+    }
+    close(fd);
 	return (0);
 }
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

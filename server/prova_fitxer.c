@@ -4,6 +4,8 @@
 #include <string.h>
 
 
+
+
 void posicio() {
 	int pos, offset;
 	int mida;
@@ -46,7 +48,7 @@ void paraula() {
     int offset;
 	int mida, pos;
 	int mida_real;
-	char paraula[8];
+	char paraula[16];
 	printf("Paraula: ");
 	scanf("%s",paraula);
 	printf("num caracters: ");
@@ -65,6 +67,7 @@ void paraula() {
 	char *prova = NULL;
 	do {
         num = fread(buffer,sizeof(char),64,f);
+        printf("%s\n",buffer);
         prova = strstr(buffer,paraula);
         if (prova != NULL) {
             printf("%d\n",ftell(f));
@@ -72,7 +75,7 @@ void paraula() {
             printf("pos = %d\n",pos);
             break;
         }
-        fseek(f,ftell(f)-8,SEEK_SET);//Moc el punter 8 caracters enrere perque no pugui quedar la paraula tallada
+        fseek(f,ftell(f)-16,SEEK_SET);//Moc el punter 16 caracters enrere perque no pugui quedar la paraula tallada
 
 	} while (num == 64);
 
