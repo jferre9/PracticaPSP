@@ -130,8 +130,6 @@ void pujar_executable(int fd){
 	}
 
 	fclose(f);
-
-
 }
 
 
@@ -140,8 +138,12 @@ void pujar_executable(int fd){
  * -2: No existeix el fitxer
  * -3: S'ha produit un error al executar
  */
-void iniciar_executable(int fd, char* file){
+void iniciar_executable(int fd){
 	int m;
+	char file[64];
+
+    printf("Fitxer a executar: ");
+    scanf("%s", file);
 	//Enviem la operacio al servidor:
 	char ordre[8] = "START";
 	if((m=write(fd, ordre, sizeof(ordre)))<0){
@@ -236,7 +238,7 @@ void llegir_posicio(int fd) {
 
     } else {
         if (resposta == -1) printf("No existeix el fitxer\n");
-        else if (resposta == -1) printf("La posicio es troba fora del fitxer\n");
+        else if (resposta == -2) printf("La posicio es troba fora del fitxer\n");
         else printf("Error desconegut\n");
     }
 
@@ -279,7 +281,7 @@ void busca_paraula(int fd) {
         printf("Caracters posteriors = %s\n",posterior);
     } else {
         if (resposta == -1) printf("No existeix el fitxer\n");
-        else if (resposta == -1) printf("No s'ha trobat la paraula\n");
+        else if (resposta == -2) printf("No s'ha trobat la paraula\n");
         else printf("Error desconegut\n");
     }
 
@@ -317,9 +319,7 @@ int main(int argc, char **argv) {
                 pujar_executable(fd);
                 break;
             case 2:
-                printf("Fitxer a executar: ");
-                scanf("%s", buff);
-                iniciar_executable(fd, buff);
+                iniciar_executable(fd);
                 break;
             case 3:
                 matar_programa(fd);

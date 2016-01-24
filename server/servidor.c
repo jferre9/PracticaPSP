@@ -60,6 +60,7 @@ typedef struct {
 
 
 int pid = -1;//Aqui es guarda el pid del process que executa el programa
+char ruta[64];//Aqui es guarda la ruta del programa
 
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 
@@ -141,13 +142,45 @@ int busca_posicio(t_clients *clients) {
 	return -1;
 }
 
+
+
+
+
+//Funcio que inicia el programa definit a la variable global ruta
+void start() {
+    pid = fork();
+	if (pid < 0) {
+		perror ("Fork"); _exit (-1);
+	}
+	else if (pid == 0) {
+		//implamentar exec
+		execl(ruta,ruta,NULL);
+		perror("exec");
+		_exit(-1);
+	}
+}
+
+//funcio que para l'execucio del programa que te per pid la variable global pid
+int stop() {
+    int err;
+	if (pid <= 0) err = ERROR;
+	else if (kill(pid,SIGKILL) >= 0) {
+		if (waitpid(pid,NULL,0) < 0) perror("waitpid");
+		err = OK;
+		pid = -1;
+	} else {
+		pid = -1;
+		err = -2;
+	}
+	return err;
+}
+
 /* Codis error possibles:
  * -1: Ja hi ha un programa executant-se
  * -2: No existeix el fitxer
  * -3: S'ha produit un error al executar
  */
 void iniciar_executable(int fdClient) {
-	char file[64];
 	int m;
 
 	if (pid >= 0) {		// se suposa que el programa nomes es para si se'l hi diu desde aqui
@@ -161,13 +194,13 @@ void iniciar_executable(int fdClient) {
 	}
 
 	//LLegim el nom
-	if((m=read(fdClient,&file,64))<0){
+	if((m=read(fdClient,&ruta,64))<0){
         perror("read");
     }
-    printf("Fitxer = %s\n",file);
+    printf("Fitxer = %s\n",ruta);
 
     //Comprovem que existeixi el fitxer
-	if( access( file, F_OK ) == -1 ) {
+	if( access( ruta, F_OK ) == -1 ) {
 		/*err = -2;
 		if((m=write(fdClient, &err, sizeof(int)))<0){
 			perror("Write client");
@@ -177,18 +210,9 @@ void iniciar_executable(int fdClient) {
 		return;
 	}
 
+    start();
 
-	pid = fork();
-	if (pid < 0) {
-		perror ("Fork"); _exit (-1);
-	}
-	else if (pid == 0) {
-		//implamentar exec
-		execl(file,file,NULL);
-		perror("exec");
-		_exit(-1);
-	}
-	//Codi del pare
+
 	sleep(2); // Esperems 2 segons per veure si el proces segueix funcionant
 	printf("waitpid\n");
 	int res = waitpid(pid,NULL,WNOHANG);
@@ -211,16 +235,8 @@ void iniciar_executable(int fdClient) {
  * -2: Error al matar el programa
  */
 void matar_programa (int fdClient) {
-	int err;
-	if (pid <= 0) err = ERROR;
-	else if (kill(pid,SIGKILL) >= 0) {
-		if (waitpid(pid,NULL,0) < 0) perror("waitpid");
-		err = OK;
-		pid = -1;
-	} else {
-		pid = -1;
-		err = -2;
-	}
+
+	int err = stop();
 	enviar_codi(fdClient,err);
 }
 
@@ -232,6 +248,7 @@ void matar_programa (int fdClient) {
 void llegir_posicio(int fdClient) {
     t_fitxer fitxer;
     int num, m;
+    char parat = 0;
 
     if((m=read(fdClient,&fitxer,sizeof(t_fitxer)))<0){
         perror("read");
@@ -240,6 +257,10 @@ void llegir_posicio(int fdClient) {
 	if (f == NULL) {
         enviar_codi(fdClient,ERROR);
         return;
+	}
+    if (pid > 0) {
+        stop();
+        parat = 1;
 	}
 	char buffer[fitxer.offset+1];
 
@@ -257,7 +278,7 @@ void llegir_posicio(int fdClient) {
         perror("Write client");
     }
     fclose(f);
-
+    if (parat) start();
 }
 
 
@@ -268,6 +289,7 @@ void llegir_posicio(int fdClient) {
 void busca_paraula(int fdClient) {
     t_fitxer fitxer;
     int m, num;
+    char parat = 0;
     if((m=read(fdClient,&fitxer,sizeof(t_fitxer)))<0){
         perror("read");
     }
@@ -276,6 +298,12 @@ void busca_paraula(int fdClient) {
         enviar_codi(fdClient,ERROR);
         return;
 	}
+
+	if (pid > 0) {
+        stop();
+        parat = 1;
+	}
+
 
 	char anterior[fitxer.offset+1];
 	char posterior[fitxer.offset+1];
@@ -322,6 +350,7 @@ void busca_paraula(int fdClient) {
         perror("Write client");
     }
     fclose(f);
+    if (parat) start();
 }
 
 void *atendre_client(void *x) {
