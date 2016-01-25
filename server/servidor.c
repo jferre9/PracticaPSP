@@ -358,6 +358,8 @@ void *atendre_client(void *x) {
 	//printf("fd = %d\n",fdClient);
 	char ordre[8];
 	int m;
+	
+	enviar_codi(client->sock,OK); //Envio el codi conforme queden fils lliures per atendre el client
 
     while (1) {
 	//llegim la ordre
@@ -448,6 +450,7 @@ int main(int argc, char**argv){
 
 		} else {
 		   //enviar missatge d'error i tancar connexio
+		   enviar_codi(fdClient,ERROR);
 		   printf("No queden connexions lliures\n");
 		   close(fdClient);
 		   pthread_mutex_unlock(&mut);

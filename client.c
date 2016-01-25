@@ -213,10 +213,17 @@ void llegir_posicio(int fd) {
 
     printf("Introdueix el nom del fitxer: ");
     scanf("%s",fitxer.file);
-    printf("Introdueix la posicio: ");
-    scanf("%d",&fitxer.pos);
-    printf("Introdueix el nombre de caracters a llegir: ");
-    scanf("%d",&fitxer.offset);
+    
+    do {
+		printf("Introdueix la posicio: ");
+		scanf("%d",&fitxer.pos);
+		if (fitxer.pos < 0) printf("La posició no pot ser negativa\n");
+	} while (fitxer.pos < 0);
+	do {
+		printf("Introdueix el nombre de caracters a llegir: ");
+		scanf("%d",&fitxer.offset);
+		if (fitxer.offset < 1) printf("Ha de ser superior a 1\n");
+	} while (fitxer.offset < 1);
 
     char ordre[8]= "READ";
     if((m=write(fd, ordre, sizeof(ordre)))<0){
@@ -254,8 +261,11 @@ void busca_paraula(int fd) {
     scanf("%s",fitxer.file);
     printf("Introdueix la paraula: ");
     scanf("%s",fitxer.paraula);
-    printf("Introdueix el nombre de caracters a llegir: ");
-    scanf("%d",&fitxer.offset);
+	do {
+		printf("Introdueix el nombre de caracters a llegir: ");
+		scanf("%d",&fitxer.offset);
+		if (fitxer.offset < 1) printf("Ha de ser superior a 1\n");
+	} while (fitxer.offset < 1);
 
     char ordre[8]= "SEARCH";
     if((m=write(fd, ordre, sizeof(ordre)))<0){
@@ -306,6 +316,11 @@ int main(int argc, char **argv) {
         perror("connect");
         return -1;
     }
+    if (rebre_codi(fd) != OK) {
+		printf("No queden conexions lliures al servidor\n");
+		close(fd);
+		return (-1);
+	}
     int opcio = 0;
     while (opcio != 6) {
         printf("Que vols fer? \n1)Passar executable\n2)Iniciar Executable\n");
