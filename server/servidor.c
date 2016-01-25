@@ -23,7 +23,7 @@ START
 STOP
 READ
 SEARCH
-DELETE
+CLOSE
 
 */
 
@@ -61,6 +61,7 @@ typedef struct {
 
 int pid = -1;//Aqui es guarda el pid del process que executa el programa
 char ruta[64];//Aqui es guarda la ruta del programa
+pthread_mutex_t mut_pid = PTHREAD_MUTEX_INITIALIZER; //mutex pel pid
 
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 
@@ -80,12 +81,12 @@ void pujar_executable(int fdClient) {
 	if((m=read(fdClient,&exe,sizeof(t_executable)))<0){
         perror("read");
     }
-    printf("%s\n",exe.name);
+    //printf("%s\n",exe.name);
 
     //Comprovem que no existeixi el fitxer
 	if( access( exe.name, F_OK ) != -1 ) {
 		enviar_codi(fdClient,ERROR);
-		printf("Existeix un fitxer amb el mateix nom\n");
+		//printf("Existeix un fitxer amb el mateix nom\n");
 		return;
 	}
 	enviar_codi(fdClient,OK);
@@ -98,7 +99,7 @@ void pujar_executable(int fdClient) {
 
     int actSize = 0;
     do {
-		printf("Read\n");
+		//printf("Read\n");
         m=read(fdClient,buf,1024);
         if(m>0){
             n = fwrite(buf, sizeof(char), m,f);
@@ -112,10 +113,10 @@ void pujar_executable(int fdClient) {
 		if((m=write(fdClient, &err, sizeof(int)))<0){
 			perror("Write client");
 		}
-		printf("Error al transferir\n");
+		//printf("Error al transferir\n");
 	} else {
 		enviar_codi(fdClient,OK);
-		printf("S'ha transferit correctament\n");
+		printf("S'ha transferit el fitxer %s correctament\n",exe.name);
 		if (chmod(exe.name,S_IRWXU | S_IRWXG | S_IRWXO) < 0) perror("chmod");
 	}
 
@@ -150,7 +151,8 @@ int busca_posicio(t_clients *clients) {
 void start() {
     pid = fork();
 	if (pid < 0) {
-		perror ("Fork"); _exit (-1);
+		perror ("Fork");
+		return;
 	}
 	else if (pid == 0) {
 		//implamentar exec
@@ -175,6 +177,7 @@ int stop() {
 	return err;
 }
 
+
 /* Codis error possibles:
  * -1: Ja hi ha un programa executant-se
  * -2: No existeix el fitxer
@@ -183,13 +186,12 @@ int stop() {
 void iniciar_executable(int fdClient) {
 	int m;
 
+	pthread_mutex_lock(&mut_pid);
+
 	if (pid >= 0) {		// se suposa que el programa nomes es para si se'l hi diu desde aqui
-		/*err = ERROR;	// tambe es podria mirar si hi ha un process amb aquest pid
-		if((m=write(fdClient, &err, sizeof(int)))<0){
-			perror("Write client");
-		}*/
 		enviar_codi(fdClient, -1);
-		printf("ja hi ha un programa executant-se\n");
+		//printf("ja hi ha un programa executant-se\n");
+		pthread_mutex_unlock(&mut_pid);
 		return;
 	}
 
@@ -197,34 +199,34 @@ void iniciar_executable(int fdClient) {
 	if((m=read(fdClient,&ruta,64))<0){
         perror("read");
     }
-    printf("Fitxer = %s\n",ruta);
 
     //Comprovem que existeixi el fitxer
 	if( access( ruta, F_OK ) == -1 ) {
-		/*err = -2;
-		if((m=write(fdClient, &err, sizeof(int)))<0){
-			perror("Write client");
-		}*/
 		enviar_codi(fdClient,-2);
-		printf("El fitxer no existeix\n");
+		//printf("El fitxer no existeix\n");
+		pthread_mutex_unlock(&mut_pid);
 		return;
 	}
 
+    //Fem l'exec
     start();
 
-
+    if (pid < 0) {
+        enviar_codi(fdClient,-3);
+        pid = -1;
+		pthread_mutex_unlock(&mut_pid);
+        return;
+    }
 	sleep(2); // Esperems 2 segons per veure si el proces segueix funcionant
-	printf("waitpid\n");
-	int res = waitpid(pid,NULL,WNOHANG);
-	printf("Resultat waitpid = %d\n",res);
+	int res = waitpid(pid,NULL,WNOHANG);//Comprovem que el programa seguixi funcionant amb un waitpid que no bloqueja
 
-	if (res == pid) {//El proces ja ha mort
-		enviar_codi(fdClient,-3);
-		pid = -1;
-	} else if (res == 0) {
+	if (res == 0) {
 		enviar_codi(fdClient, OK);
+	} else {
+	    enviar_codi(fdClient,-3);
+		pid = -1;
 	}
-
+    pthread_mutex_unlock(&mut_pid);
 
 
 }
@@ -235,9 +237,11 @@ void iniciar_executable(int fdClient) {
  * -2: Error al matar el programa
  */
 void matar_programa (int fdClient) {
+    pthread_mutex_lock(&mut_pid);
 
 	int err = stop();
 	enviar_codi(fdClient,err);
+	pthread_mutex_unlock(&mut_pid);
 }
 
 
@@ -258,6 +262,8 @@ void llegir_posicio(int fdClient) {
         enviar_codi(fdClient,ERROR);
         return;
 	}
+
+	pthread_mutex_lock(&mut_pid);
     if (pid > 0) {
         stop();
         parat = 1;
@@ -268,17 +274,16 @@ void llegir_posicio(int fdClient) {
 	num = fread(buffer,sizeof(char),fitxer.offset,f);
 	if (num <= 0) {
         enviar_codi(fdClient,-2);
-        fclose(f);
-        return;
+	} else {
+        buffer[num] = '\0';
+        enviar_codi(fdClient,OK);
+        if((m=write(fdClient, buffer, fitxer.offset+1))<0) {
+            perror("Write client");
+        }
 	}
-	buffer[num] = '\0';
-	printf("He llegit %d: %s\n",num,buffer);
-	enviar_codi(fdClient,OK);
-	if((m=write(fdClient, buffer, fitxer.offset+1))<0) {
-        perror("Write client");
-    }
     fclose(f);
     if (parat) start();
+    pthread_mutex_unlock(&mut_pid);
 }
 
 
@@ -298,7 +303,7 @@ void busca_paraula(int fdClient) {
         enviar_codi(fdClient,ERROR);
         return;
 	}
-
+    pthread_mutex_unlock(&mut_pid);
 	if (pid > 0) {
         stop();
         parat = 1;
@@ -313,10 +318,9 @@ void busca_paraula(int fdClient) {
 
 	do {
         num = fread(buffer,sizeof(char),64,f);
-        printf("%s\n",buffer);
-        prova = strstr(buffer,fitxer.paraula);
+        prova = strstr(buffer,fitxer.paraula);//Retorna un punter al inici de la paraula
         if (prova != NULL) {
-            pos = ftell(f) - 64 + (prova - buffer);
+            pos = ftell(f) - 64 + (prova - buffer);//resto els punters per trobar la posicio
             break;
         }
         fseek(f,ftell(f)-16,SEEK_SET);//Moc el punter 16 caracters enrere perque no pugui quedar la paraula tallada
@@ -325,8 +329,10 @@ void busca_paraula(int fdClient) {
 
 	if (prova == NULL) {
         enviar_codi(fdClient,-2);
-        printf("No s'ha trobat la paraula\n");
         fclose(f);
+
+        if (parat) start();
+		pthread_mutex_unlock(&mut_pid);
         return;
 	}
 	if ((pos - fitxer.offset) < 0) {
@@ -341,7 +347,6 @@ void busca_paraula(int fdClient) {
 	fseek(f,ftell(f)+strlen(fitxer.paraula),SEEK_SET);
 	num  = fread(posterior,sizeof(char),fitxer.offset,f);
 	posterior[num] = '\0';
-	printf("Anterior = %s\nPosterior = %s\n",anterior,posterior);
 	enviar_codi(fdClient,OK);
 	if((m=write(fdClient, anterior, fitxer.offset+1))<0) {
         perror("Write client");
@@ -351,6 +356,7 @@ void busca_paraula(int fdClient) {
     }
     fclose(f);
     if (parat) start();
+    pthread_mutex_unlock(&mut_pid);
 }
 
 void *atendre_client(void *x) {
@@ -358,7 +364,8 @@ void *atendre_client(void *x) {
 	//printf("fd = %d\n",fdClient);
 	char ordre[8];
 	int m;
-	
+
+	printf("S'ha establert una nova connexio\n");
 	enviar_codi(client->sock,OK); //Envio el codi conforme queden fils lliures per atendre el client
 
     while (1) {
@@ -366,11 +373,9 @@ void *atendre_client(void *x) {
 	if((m=read(client->sock,ordre,sizeof(ordre)))<0){
         perror("read");
     }
-    if (!m) {
-        printf("El client ha tancat el programa\n");
+    if (!m) {//Si llegeixo 0 bytes es perque s'ha perdut la connexio
         break;
     }
-    printf("m = %d\n\n\n",m);
 
     //Cridem les diferents funcions depenent de la ordre
 
@@ -379,12 +384,13 @@ void *atendre_client(void *x) {
     else if (!strcmp(ordre,"STOP")) matar_programa(client->sock);
     else if (!strcmp(ordre,"READ")) llegir_posicio(client->sock);
     else if (!strcmp(ordre,"SEARCH")) busca_paraula(client->sock);
-    //else if (!strcmp(ordre,"DELETE")) matar_programa(client->sock);
+    else if (!strcmp(ordre,"CLOSE")) break;
 
     }
 	pthread_mutex_lock(&mut);
 	client->ocupat = 0;
 	pthread_mutex_unlock(&mut);
+	printf("S'ha tancat la connexio amb el client\n");
 
 
 

@@ -15,7 +15,7 @@ START
 STOP
 READ
 SEARCH
-DELETE
+CLOSE
 
 */
 
@@ -213,7 +213,7 @@ void llegir_posicio(int fd) {
 
     printf("Introdueix el nom del fitxer: ");
     scanf("%s",fitxer.file);
-    
+
     do {
 		printf("Introdueix la posicio: ");
 		scanf("%d",&fitxer.pos);
@@ -351,6 +351,10 @@ int main(int argc, char **argv) {
                 printf("Opcio incorrecte\n");
                 break;
         }
+    }
+    char ordre[8] = "CLOSE";
+    if((m=write(fd, ordre, sizeof(ordre)))<0){
+        perror("Write client");
     }
     close(fd);
 	return (0);
