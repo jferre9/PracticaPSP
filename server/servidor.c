@@ -13,7 +13,7 @@
 
 #define PORT 1600
 
-#define MAX_CL	1
+#define MAX_CL	2
 
 /*
 Ordres possibles:

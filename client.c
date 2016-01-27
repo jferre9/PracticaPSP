@@ -323,6 +323,7 @@ int main(int argc, char **argv) {
 	}
     int opcio = 0;
     while (opcio != 6) {
+        system("clear");
         printf("Que vols fer? \n1)Passar executable\n2)Iniciar Executable\n");
         printf("3)Parar execució\n4)Llegir caracters\n5)Buscar paraula\n");
         printf("6)Tancar programa\n");
@@ -351,6 +352,11 @@ int main(int argc, char **argv) {
                 printf("Opcio incorrecte\n");
                 break;
         }
+        if (opcio != 6) {
+			printf("Prem ENTER per continuar\n");
+			while (getchar() != '\n');//L'enter al introduir dades
+			while (getchar() != '\n');//L'enter per continuar
+		}
     }
     char ordre[8] = "CLOSE";
     if((m=write(fd, ordre, sizeof(ordre)))<0){
